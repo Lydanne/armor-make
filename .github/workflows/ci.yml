@@ -21,5 +21,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm run check
+      - run: npm run check:ai
       - run: npm test
       - run: npm pack --dry-run
