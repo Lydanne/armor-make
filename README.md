@@ -163,3 +163,7 @@ pnpm test
 ## 发布状态
 
 仓库用于维护源代码；当前 package.json 设置为 private，未发布到 npm。许可证尚未选择，package.json 暂标记为 UNLICENSED。
+
+## 服务接入
+
+Ada、OpenClaw Gateway 和 agent-worker 的 PATH、配置继承及账号验收边界，见 [Ada / OpenClaw 接入](docs/integrations/ada-agent.md)。该说明记录接入方案，实际服务部署另行验收。
