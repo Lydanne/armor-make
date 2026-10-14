@@ -93,7 +93,7 @@ command -v git
 command -v tea
 ```
 
-如果使用 npm 全局安装本包，`armor-make` 主命令也可按名称调用；Git/tea 同名入口仍需通过 install 显式安装。安装原始项目代码不会自动创建 Git/tea 入口。
+如果使用 pnpm 全局安装本包，`armor-make` 主命令也可按名称调用；Git/tea 同名入口仍需通过 install 显式安装。安装原始项目代码不会自动创建 Git/tea 入口。
 
 ## 查找规则
 
@@ -146,14 +146,15 @@ node bin/armor-make.js uninstall
 ## 开发与验证
 
 ```bash
-npm run check
-npm run check:ai
-npm test
+pnpm install --frozen-lockfile
+pnpm run check
+pnpm run check:ai
+pnpm test
 ```
 
 测试使用临时目录和替身命令，覆盖最近配置、用户配置回退、错误传播、参数转发、安装保护、卸载和 Git 原生优先级。真实 Git 测试只操作临时仓库；本机有 tea 时使用离线 login list 验证读取临时登录配置，不发送 API 请求或业务消息。
 
-真实凭证、Gateway 配置、全局安装和运行中的 Worker 不在测试范围内。没有第三方依赖，无需 npm install 即可运行。
+真实凭证、Gateway 配置、全局安装和运行中的 Worker 不在测试范围内。没有第三方依赖，直接运行不需要安装依赖；首次开发执行 pnpm install --frozen-lockfile 核对锁文件。
 
 ## AI 协作
 

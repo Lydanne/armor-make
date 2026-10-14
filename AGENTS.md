@@ -8,10 +8,11 @@ Armor Make 给现有命令套一层包装入口，在执行前后扩展功能，
 
 ## 实现与验证
 
+- 包管理统一使用 pnpm，版本以 package.json 的 packageManager 为准；安装依赖使用 pnpm install --frozen-lockfile，更新依赖时一并提交 pnpm-lock.yaml。
 - 使用 Node.js 22+、JavaScript ESM 和标准库。保持现有零第三方运行时依赖；新增依赖说明实际缺口，语言迁移另按明确需求处理。
 - 子进程使用参数数组及环境副本；命令执行、配置解析仍交给原始命令。命中的配置错误如实报错，未命中时保留原环境和参数。
 - 修改路径识别、命令转发或安装行为时，按 [测试约定](docs/agents/testing.md) 验证可观察行为。修复先建立能捕获本问题的失败信号，再修改实现。
-- 运行 package.json 中适用的检查；代码变更至少执行 npm run check 和 npm test，AI 资料变更执行 npm run check:ai。打包改动另检查 npm pack --dry-run。
+- 运行 package.json 中适用的检查；代码变更至少执行 pnpm run check 和 pnpm test，AI 资料变更执行 pnpm run check:ai。打包改动另检查 pnpm pack --dry-run。
 - 使用临时目录和替身命令。测试无需真实凭证、业务 API、用户全局入口或运行中的服务；诊断只展示定位信息，配置内容和认证数据不进入日志、报告或 Git。
 - 目录配置选择不提供身份锁定；保留原始命令的配置优先级和显式覆盖。验收区分本地行为、平台 CI、安装、实际账号及服务接入。
 

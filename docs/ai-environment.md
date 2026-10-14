@@ -53,9 +53,9 @@ $code-review 审查相对 main 的变更
 ## 核验
 
 ```bash
-npm run check:ai
+pnpm run check:ai
 ```
 
-检查清单及上游 blob 校验、必需的 skill 元数据、支持文件完整性和本地 Markdown 链接。代码验证仍使用现有 check、test；npm 打包只含运行时 files 清单，项目技能和 AI 文档不会自动进入运行时包。
+检查清单及上游 blob 校验、必需的 skill 元数据、支持文件完整性和本地 Markdown 链接。代码验证仍使用现有 check、test；pnpm 打包只含运行时 files 清单，项目技能和 AI 文档不会自动进入运行时包。
 
 通过文件检查不能代替真实宿主的技能调用验收。下一轮以本项目为工作区时查看技能选择器；若未刷新，按宿主方式重载或开启新会话。运行结果及安装/发布状态分别报告。
