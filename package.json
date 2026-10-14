@@ -1,0 +1,23 @@
+{
+  "name": "armor-make",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prefer native tool configuration found in the current directory or its ancestors.",
+  "type": "module",
+  "bin": {
+    "armor-make": "bin/armor-make.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check bin/armor-make.js && node --check src/config.js && node --check src/commands.js && node --check src/install.js"
+  },
+  "license": "UNLICENSED"
+}
