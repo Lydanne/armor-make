@@ -20,6 +20,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
-      - run: npm run check
-      - run: npm test
-      - run: npm pack --dry-run
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - run: pnpm run check:ai
+      - run: pnpm test
+      - run: pnpm pack --dry-run
