@@ -236,7 +236,7 @@ test('inspect rejects an incomplete or invalid nearest project home without fall
   });
   await rm(join(f.child, '.armor/home'), { recursive: true });
   await file(join(f.child, '.armor/home'), 'not a directory');
-  await assert.rejects(execute(process.execPath, [cli, 'inspect', 'tea', 'issues'], { cwd: f.child, env: f.env }), error => {
+  await assert.rejects(execute(process.execPath, [cli, 'inspect', 'git', 'status'], { cwd: f.child, env: f.env }), error => {
     assert.match(error.stderr, /must be a directory/);
     return true;
   });
