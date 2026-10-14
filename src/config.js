@@ -1,11 +1,10 @@
 import { access, lstat, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { homedir } from 'node:os';
 
 export const adapters = Object.freeze({
-  git: { configRelativePath: 'git/config', variable: 'GIT_CONFIG_GLOBAL' },
-  tea: { configRelativePath: 'tea/config.yml', variable: 'XDG_CONFIG_HOME' },
+  git: { configRelativePath: '.gitconfig', variable: 'GIT_CONFIG_GLOBAL' },
+  tea: { configRelativePath: '.config/tea/config.yml', variable: 'XDG_CONFIG_HOME' },
 });
 
 export function getAdapter(tool) {
@@ -44,27 +43,35 @@ export async function nearestExistingDirectory(path) {
   }
 }
 
-export async function findConfiguration(tool, operationDirectory, env = process.env) {
+export async function findConfiguration(tool, operationDirectory) {
   const adapter = getAdapter(tool);
   let directory = await nearestExistingDirectory(operationDirectory);
-  const home = resolve(env.HOME || homedir());
-  let realHome;
-  try { realHome = await realpath(home); } catch { realHome = home; }
   const searched = [];
 
   while (true) {
-    // HOME/.config is the original user configuration, not a project override.
-    if (directory !== realHome) {
-      const configHome = join(directory, '.config');
-      const configFile = join(configHome, adapter.configRelativePath);
-      searched.push(configFile);
-      if (await entryExists(configFile)) {
-        await readableFile(configFile);
-        return { configFile, configHome, root: directory, searched };
+    const projectHome = join(directory, '.armor', 'home');
+    searched.push(projectHome);
+    if (await entryExists(projectHome)) {
+      if (!(await stat(projectHome)).isDirectory()) {
+        throw new Error(`Project configuration home must be a directory: ${projectHome}`);
       }
+      const configFile = join(projectHome, adapter.configRelativePath);
+      if (!(await entryExists(configFile))) {
+        throw new Error(`Missing ${tool} configuration in selected project home: ${configFile}`);
+      }
+      await readableFile(configFile);
+      let sshConfig = null;
+      if (tool === 'git') {
+        const candidate = join(projectHome, '.ssh', 'config');
+        if (await entryExists(candidate)) {
+          await readableFile(candidate);
+          sshConfig = candidate;
+        }
+      }
+      return { configFile, configHome: join(projectHome, '.config'), projectHome, sshConfig, root: directory, searched };
     }
     const parent = dirname(directory);
-    if (parent === directory) return { configFile: null, configHome: null, root: null, searched };
+    if (parent === directory) return { configFile: null, configHome: null, projectHome: null, sshConfig: null, root: null, searched };
     directory = parent;
   }
 }
@@ -74,6 +81,15 @@ export function configurationEnvironment(tool, selection, env) {
   if (selection.configFile) {
     const adapter = getAdapter(tool);
     childEnv[adapter.variable] = tool === 'git' ? selection.configFile : selection.configHome;
+    if (tool === 'git' && selection.sshConfig) {
+      // GIT_SSH_COMMAND is parsed by Git's shell, so quote the entire path.
+      const command = `ssh -F '${selection.sshConfig.replaceAll("'", "'\\''")}'`;
+      if (env.GIT_SSH || (env.GIT_SSH_COMMAND && env.GIT_SSH_COMMAND !== command)) {
+        throw new Error('SSH configuration conflict: project .ssh/config cannot be combined with an existing GIT_SSH or GIT_SSH_COMMAND.');
+      }
+      childEnv.GIT_SSH_COMMAND = command;
+      childEnv.GIT_SSH_VARIANT = 'ssh';
+    }
   }
   return childEnv;
 }

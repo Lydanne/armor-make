@@ -19,9 +19,11 @@ Install options:
   --dry-run                Show the installation plan without writing files
 
 Directory configuration:
-  git: .config/git/config  -> GIT_CONFIG_GLOBAL
-  tea: .config/tea/config.yml -> XDG_CONFIG_HOME
-  Nearest matching file wins; no match preserves the original environment.
+  git: .armor/home/.gitconfig -> GIT_CONFIG_GLOBAL
+  tea: .armor/home/.config/tea/config.yml -> XDG_CONFIG_HOME
+  Nearest .armor/home wins; missing tool configuration is an error.
+  Optional .armor/home/.ssh/config selects Git SSH; conflicting SSH env is an error.
+  No project home preserves the original environment; HOME is never changed.
 `;
 
 function installationOptions(args, mode) {
