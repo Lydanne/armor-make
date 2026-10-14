@@ -169,7 +169,9 @@ export function publicPlan(plan) {
     tool: plan.tool, program: plan.program, cwd: plan.cwd,
     operationDirectory: plan.operationDirectory,
     source: plan.configFile ? 'directory' : 'original',
+    projectHome: plan.projectHome,
     configFile: plan.configFile,
+    sshConfig: plan.sshConfig,
     configurationOverride: plan.configFile ? {
       name: adapter.variable,
       value: plan.tool === 'git' ? plan.configFile : plan.configHome,

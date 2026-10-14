@@ -2,23 +2,23 @@
 
 使用 Node.js 实现的命令包装工具：给现有命令套一层入口，在执行前后扩展功能，再调用原来的官方程序。
 
-第一个扩展功能是父目录配置优先读取：从当前操作目录逐级向父目录寻找原生配置，找到就让本次调用使用它；找不到则保留工具原来的用户级配置。首版适配 Git 和 tea，零第三方依赖，需要 Node.js 22 或以上。
+第一个扩展功能是父目录配置优先读取：从当前操作目录逐级寻找最近的 `.armor/home`，以它作为统一的项目配置根；没有项目配置根时保留原用户环境。首版适配 Git 和 tea，零第三方依赖，需要 Node.js 22 或以上。
 
 ## 原理
 
 ```text
 git / tea
   -> armor-make 的同名入口
-  -> 从操作目录逐级查找 .config/<工具>/...
+  -> 从操作目录逐级查找最近的 .armor/home
   -> 找到：为官方程序设置配置路径环境变量
   -> 未找到：原参数、原环境透传
   -> 官方程序执行原命令
 ```
 
-| 工具 | 逐级寻找的文件 | 本次子进程设置 |
+| 工具 | 项目配置根中的文件 | 本次子进程设置 |
 | --- | --- | --- |
-| Git | `.config/git/config` | `GIT_CONFIG_GLOBAL=找到的文件` |
-| tea | `.config/tea/config.yml` | `XDG_CONFIG_HOME=找到的 .config 目录` |
+| Git | `.armor/home/.gitconfig` | `GIT_CONFIG_GLOBAL=找到的文件` |
+| tea | `.armor/home/.config/tea/config.yml` | `XDG_CONFIG_HOME=项目配置根/.config` |
 
 配置格式和实际业务逻辑仍由官方 Git、tea 处理。工具不会修改 HOME、个人全局配置、仓库远端或项目登记，不解析配置中的 Token 来拼命令。
 
@@ -28,15 +28,16 @@ git / tea
 
 ```text
 workspace/
-├── .config/
-│   ├── git/config
-│   └── tea/config.yml
+├── .armor/home/
+│   ├── .gitconfig
+│   ├── .ssh/config          # 可选
+│   └── .config/tea/config.yml
 └── projects/example/repositories/app/
 ```
 
 从 app 目录执行，也会向上找到工作区根的配置，不在独立仓库或子模块的 `.git` 边界停止。
 
-Git 文件使用原生格式：
+`.armor/home/.gitconfig` 使用原生格式：
 
 ```ini
 [user]
@@ -44,9 +45,9 @@ Git 文件使用原生格式：
     email = project-user@example.com
 ```
 
-此例只设置提交署名，不设置远端认证。tea 文件使用 `tea/config.yml` 的原生登录格式；准备文件时使用管理员实际授权的账号和凭证。
+此例只设置提交署名，不设置远端认证。tea 文件使用原生 YAML 登录格式；准备文件时使用管理员实际授权的账号和凭证。
 
-含 Token、密钥、认证头的配置必须放在 Git 忽略的私有位置，文件权限设为 `600`，私有目录为 `700`。本工具不自动生成或收集凭证；不要把真实配置内容贴进公开报告。
+在使用本工具的项目 .gitignore 中加入 `.armor/`。含 Token、密钥、认证头的配置必须放在 Git 忽略的私有位置，文件权限设为 `600`，私有目录为 `700`。本工具不自动生成或收集凭证；不要把真实配置内容贴进公开报告。
 
 ## 本地使用
 
@@ -58,7 +59,7 @@ node bin/armor-make.js run git status
 node bin/armor-make.js inspect tea issues
 ```
 
-`inspect` 只展示命令程序、操作目录、搜索路径及命中的配置文件，不读取或展示配置内容，不执行目标命令。显式 Git 元数据参数的定位会调用真实 Git 的只读 rev-parse；普通调用不需要额外 Git 子进程。
+`inspect` 只展示命令程序、操作目录、项目配置根、搜索路径及命中的配置文件（含可选 SSH 配置路径），不读取或展示配置内容，不执行目标命令。显式 Git 元数据参数的定位会调用真实 Git 的只读 rev-parse；普通调用不需要额外 Git 子进程。
 
 运行时原命令参数原样传递，使用参数数组而非 shell 字符串；stdin、stdout、stderr 继承，退出码和终止信号状态传回调用方。
 
@@ -97,13 +98,11 @@ command -v tea
 
 ## 查找规则
 
-- 从当前工具的实际操作目录开始，最近的对应文件优先。
-- 子目录只有 tea 配置时，Git 仍继续向上寻找自己的文件。
-- 不自动合并多份祖先配置；Git 原生 include 仍由 Git 自行处理。
-- 用户 HOME 本身的 `.config` 保留为原始用户配置，不把它当作项目覆盖；其他祖先仍按顺序搜索。
-- 文件已存在但不是可读普通文件或链接损坏时报错，不悄悄回退。
-- 配置内容非法时由官方程序报错，不回退其他账号。
-- 根配置被删除后重新查找祖先或用户配置，这是优先查找语义，不是固定身份策略。
+- 从工具的实际操作目录开始，选定最近的 `.armor/home`；Git、tea 共用同一个项目配置根。
+- 未找到配置根时原环境透传；找到后要求对应工具配置文件存在且可读，缺失、损坏或类型错误就报错，不再寻找其他祖先或个人配置。
+- 不自动合并多个项目配置根。Git 原生 include 由 Git 处理，建议使用相对于 `.gitconfig` 的路径；`~/` 仍指真实 HOME。
+- 原生 `~/.gitconfig`、`~/.config` 及旧项目 `.config` 不作为项目入口。
+- 原生配置内容非法时由原程序报错。删除整个项目配置根后重新寻找祖先或回到原环境；仅删除某工具文件会报缺失。
 - Git 的连续 `-C`、clone 目标、本地 tea `--repo` 和 clone 目标参与目录定位。
 - 显式 Git 目录/工作树参数或环境通过真实 Git 的只读定位处理；裸仓库使用其 Git 目录。CLI 的未核验特殊语法仍需按实际版本补充测试。
 
@@ -122,17 +121,29 @@ command -v tea
 
 已运行的进程不会因安装入口或更改配置自动更新 PATH。旧 Worker、新任务、自动同步和独立 Codex 分别验收；安装不等于服务接入完成。
 
+## 可选 SSH 配置
+
+项目配置根中存在 `.ssh/config` 时，Git 调用设置 `GIT_SSH_COMMAND=ssh -F <该文件>` 和 `GIT_SSH_VARIANT=ssh`，由 PATH 中的原始 SSH 读取配置。路径经过 shell 引号处理；工具不会生成密钥或读取配置内容。
+
+若原环境已有不同的 `GIT_SSH_COMMAND` 或非空 `GIT_SSH`，明确报冲突，不覆盖或猜测合并。相同配置的子进程可以继承。没有项目 `.ssh/config` 时保持原 SSH 环境不变。指定 `-F` 后 SSH 不再自动读取默认用户／系统配置，所需代理、端口和信任设置应写入该文件。
+
+HOME 未改变，SSH 配置中的 `~` 仍指原账号主目录。密钥、known_hosts 及 Include 使用明确的绝对路径。需要限定密钥来源时，在该原生配置中设置 IdentityFile、IdentitiesOnly 和 IdentityAgent；实际认证仍按服务端结果验收。
+
 ## 配置优先读取与固定账号
 
-armor-make 首版只选择配置来源，保留官方优先级和显式参数：
+本工具定向配置来源，不提供强制账号隔离：
 
-- Git 的 `.git/config`、worktree 配置、`-c`、署名及 SSH 环境可以覆盖 global 来源。
-- tea 的认证环境或 `--login` 可能覆盖选中的登录配置。
-- OpenClaw 自动同步明确设置的 GIT_SSH_COMMAND 会覆盖 core.sshCommand。
+- Git local、worktree、`-c`、署名环境和 HTTPS credential helper 仍按原生规则工作；项目 SSH 命令环境的优先级高于 core.sshCommand。
+- tea 的认证环境或 `--login` 可能选择不同账号。文件 Token 保存在 YAML；OAuth 还涉及配置目录中的独立凭证文件和系统安全存储，不能当作已隔离的项目账号。
+- HOME、缓存目录、SSH agent 和系统钥匙串保持原用户环境；不会给 Gateway、Codex 或 Worker 切换 HOME。
 
-因此这不是“所有命令不可绕过地必须使用指定账号”的保证。这个目标需要额外的身份冲突/缺失校验与同步接入；不能仅凭配置路径正确或公共仓库读取成功宣称认证账号已确认。
+公共仓库读取成功、配置路径正确和提交署名都不能证明远端认证身份。原生配置的 include、helper、hooks 等执行行为由管理员复核。
 
-配置会改变官方程序的行为，也可能涉及 Git include、helper 和 hooks。本工具不提供对原生配置执行行为的安全隔离，不自动执行额外项目脚本。
+## 从旧布局迁移
+
+旧项目 `.config/git/config` 移到 `.armor/home/.gitconfig`，旧 `.config/tea/config.yml` 移到 `.armor/home/.config/tea/config.yml`。先加入 Git 忽略，保留私有权限并核对 Git include 的相对路径；本工具不自动移动凭证，也不兼容扫描旧布局。
+
+可选 SSH 文件需按前述路径和环境冲突规则准备。已安装的入口读取安装时记录的源码位置；同一位置更新源码即可使用新规则，移动源码后需重新安装。跨布局更新前准备配置，使用 inspect 核对，再执行原命令。
 
 ## 卸载
 

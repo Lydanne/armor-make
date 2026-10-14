@@ -6,13 +6,14 @@
 
 ```text
 ada-agent/
-├── .config/
-│   ├── git/config
-│   └── tea/config.yml
+├── .armor/home/
+│   ├── .gitconfig
+│   ├── .ssh/config          # 可选
+│   └── .config/tea/config.yml
 └── projects/xgj/repositories/teacher/
 ```
 
-Worker 在登记项目根 projects/xgj 启动，repository 只选择技能与规范范围。命令从实际操作目录向父目录查找，不在独立 Git 根或子模块边界停止，因此上述布局能选中角色根配置。每个工具选择自己的最近文件；配置来源正确与服务端认证身份分别验收。
+Worker 在登记项目根 projects/xgj 启动，repository 只选择技能与规范范围。命令从实际操作目录向父目录查找，不在独立 Git 根或子模块边界停止，因此上述布局能选中角色根配置。每个工具选择最近的项目配置根，工具文件缺失时报错；配置来源正确与服务端认证身份分别验收。
 
 ## 终端与 Codex
 
@@ -47,12 +48,14 @@ Gateway 自身和 Worker 的 PATH 分别验收。检查每个使用中的 CLI pr
 
 - Git local、worktree、-c、署名环境及 SSH 命令。
 - tea 的认证环境及 --login。
-- 最近子目录配置；项目配置全部缺失时回退到用户配置。
-- 已核对的 agent-repo 同步代码设置 GIT_SSH_COMMAND=ssh -oBatchMode=yes -oConnectTimeout=10，覆盖 core.sshCommand；实际部署还需核对 gitEnvironment 的覆盖。
+- 最近的子目录 .armor/home；配置根全部缺失时回到原环境，选定根中工具文件缺失时报错。
+- 已核对的 agent-repo 同步代码设置 GIT_SSH_COMMAND=ssh -oBatchMode=yes -oConnectTimeout=10。项目存在 .ssh/config 时会与其冲突，须在部署时显式调整同步 gitEnvironment，移除冲突命令并将 BatchMode、ConnectTimeout 等必要设置写入项目 SSH 配置；当前未执行此配置变更。
 
 强制拒绝其他身份属于独立部署目标。需要验收选中配置、tea 用户 API 返回账号、SSH 公钥归属、HTTPS 凭证身份、显式覆盖及自动同步的实际认证。Git author 和公共仓库读取成功不能证明 push 使用的账号。业务权限和 Ada 的 SOUL.md 边界继续由对应角色仓库约束。
 
 ## 私有配置与恢复
+
+项目 SSH 配置中的密钥和 known_hosts 使用明确的绝对路径，HOME 和 SSH agent 未改变。tea OAuth 的安全存储另行验收。
 
 原生配置可能含 Token、认证头、helper 和私有路径。含凭证文件须在准备前纳入 Git 忽略，并使用无凭证示例恢复；私有目录权限 700，密钥和登录文件权限 600。配置内容不进入公共文档或诊断日志。
 

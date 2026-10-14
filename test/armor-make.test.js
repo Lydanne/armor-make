@@ -35,20 +35,21 @@ async function file(path, content) {
 }
 
 async function stubProgram(path, exitCode = 0) {
-  await file(path, `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),global:process.env.GIT_CONFIG_GLOBAL,xdg:process.env.XDG_CONFIG_HOME,extra:process.env.KEEP_ME}));\nprocess.stderr.write('native stderr');\nprocess.exitCode=${exitCode};\n`);
+  await file(path, `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),global:process.env.GIT_CONFIG_GLOBAL,xdg:process.env.XDG_CONFIG_HOME,extra:process.env.KEEP_ME,home:process.env.HOME,ssh:process.env.GIT_SSH_COMMAND}));\nprocess.stderr.write('native stderr');\nprocess.exitCode=${exitCode};\n`);
   await chmod(path, 0o755);
   return path;
 }
 
-test('each tool finds its nearest file across independent repository boundaries', async t => {
+test('tools share the nearest project home across independent repository boundaries', async t => {
   const f = await fixture(t);
-  const rootGit = await file(join(f.project, '.config/git/config'), '[user]\nname = Ada\n');
-  const rootTea = await file(join(f.project, '.config/tea/config.yml'), 'logins: []\n');
+  const rootGit = await file(join(f.project, '.armor/home/.gitconfig'), '[user]\nname = Ada\n');
+  const rootTea = await file(join(f.project, '.armor/home/.config/tea/config.yml'), 'logins: []\n');
   await file(join(f.child, '.git'), 'gitdir: elsewhere\n');
-  const childTea = await file(join(f.child, '.config/tea/config.yml'), 'logins: []\n');
-  assert.equal((await findConfiguration('git', f.child, f.env)).configFile, rootGit);
+  const childTea = await file(join(f.child, '.armor/home/.config/tea/config.yml'), 'logins: []\n');
+  await assert.rejects(findConfiguration('git', f.child, f.env), /Missing git configuration/);
   assert.equal((await findConfiguration('tea', f.child, f.env)).configFile, childTea);
-  await rm(childTea);
+  await rm(join(f.child, '.armor'), { recursive: true });
+  assert.equal((await findConfiguration('git', f.child, f.env)).configFile, rootGit);
   assert.equal((await findConfiguration('tea', f.child, f.env)).configFile, rootTea);
 });
 
@@ -65,13 +66,14 @@ test('HOME/.config is treated as original user config, not a project override', 
   const cwd = join(f.home, 'work/project');
   await mkdir(cwd, { recursive: true });
   await file(join(f.home, '.config/git/config'), '[user]\nname = Personal\n');
+  await file(join(f.project, '.config/git/config'), '[user]\nname = OldProject\n');
   assert.equal((await findConfiguration('git', cwd, f.env)).configFile, null);
 });
 
 test('existing invalid or dangling candidate fails instead of falling back', async t => {
   const f = await fixture(t);
-  await file(join(f.project, '.config/git/config'), '[user]\nname = Ada\n');
-  const bad = join(f.child, '.config/git/config');
+  await file(join(f.project, '.armor/home/.gitconfig'), '[user]\nname = Ada\n');
+  const bad = join(f.child, '.armor/home/.gitconfig');
   await mkdir(bad, { recursive: true });
   await assert.rejects(findConfiguration('git', f.child, f.env), /regular file/);
   await rm(bad, { recursive: true });
@@ -87,7 +89,7 @@ test('Git -C is resolved sequentially, including config flags before the command
 
 test('clone configuration is located from its destination, not an unrelated caller', async t => {
   const f = await fixture(t);
-  await file(join(f.project, '.config/git/config'), '[user]\nname = Ada\n');
+  await file(join(f.project, '.armor/home/.gitconfig'), '[user]\nname = Ada\n');
   const destination = join(f.child, 'new repo');
   const plan = await planInvocation('git', ['clone', '--depth', '1', 'https://example.test/owner/source.git', destination], { cwd: f.home, env: f.env, program: git });
   assert.equal(plan.operationDirectory, destination);
@@ -107,7 +109,7 @@ test('real Git reads selected global configuration and retains native local prec
   const f = await fixture(t);
   const cwd = join(f.project, 'projects/xgj');
   await execute(git, ['init', '--quiet', cwd], { env: f.env });
-  const config = await file(join(f.project, '.config/git/config'), '[user]\nname = Ada\nemail = ada@example.test\n');
+  const config = await file(join(f.project, '.armor/home/.gitconfig'), '[user]\nname = Ada\nemail = ada@example.test\n');
   const read = await execute(process.execPath, [cli, 'run', 'git', 'config', '--get', 'user.name'], { cwd, env: f.env });
   assert.equal(read.stdout.trim(), 'Ada');
   const origin = await execute(process.execPath, [cli, 'run', 'git', 'config', '--global', '--show-origin', '--get', 'user.name'], { cwd, env: f.env });
@@ -132,7 +134,7 @@ test('Git metadata options and environment use the actual worktree', async t => 
 test('installed tea wrapper forwards arguments, environment and native exit status', async t => {
   const f = await fixture(t);
   const program = await stubProgram(join(f.root, 'native tea'), 7);
-  await file(join(f.project, '.config/tea/config.yml'), 'logins: []\n');
+  await file(join(f.project, '.armor/home/.config/tea/config.yml'), 'logins: []\n');
   const binDirectory = join(f.root, 'wrapped bin');
   const stateDirectory = join(f.root, 'state');
   await install({ tools: ['tea'], programs: { tea: program }, binDirectory, stateDirectory, env: f.env });
@@ -141,7 +143,7 @@ test('installed tea wrapper forwards arguments, environment and native exit stat
     assert.equal(error.stderr, 'native stderr');
     const output = JSON.parse(error.stdout);
     assert.deepEqual(output.args, ['api', 'path with spaces', '$(literal)']);
-    assert.equal(output.xdg, join(f.project, '.config'));
+    assert.equal(output.xdg, join(f.project, '.armor/home/.config'));
     assert.equal(output.extra, 'unchanged');
     return true;
   });
@@ -149,7 +151,7 @@ test('installed tea wrapper forwards arguments, environment and native exit stat
 
 test('real tea loads the selected native login configuration without making API requests', { skip: !tea }, async t => {
   const f = await fixture(t);
-  await file(join(f.project, '.config/tea/config.yml'), 'logins:\n  - name: directory-only\n    url: https://example.invalid\n    user: directory-user\n    token: fake-test-token\n    default: true\n');
+  await file(join(f.project, '.armor/home/.config/tea/config.yml'), 'logins:\n  - name: directory-only\n    url: https://example.invalid\n    user: directory-user\n    token: fake-test-token\n    default: true\n');
   const result = await execute(process.execPath, [cli, 'run', 'tea', 'login', 'list'], { cwd: f.child, env: f.env });
   assert.match(result.stdout, /directory-only/);
   assert.match(result.stdout, /directory-user/);
@@ -158,7 +160,7 @@ test('real tea loads the selected native login configuration without making API 
 
 test('malformed native Git configuration returns the native error rather than using user configuration', async t => {
   const f = await fixture(t);
-  await file(join(f.project, '.config/git/config'), '[invalid\n');
+  await file(join(f.project, '.armor/home/.gitconfig'), '[invalid\n');
   await assert.rejects(execute(process.execPath, [cli, 'run', 'git', 'config', '--get', 'user.name'], { cwd: f.child, env: f.env }), error => {
     assert.equal(error.code, 128);
     assert.match(error.stderr, /bad config line/);
@@ -188,10 +190,68 @@ test('installation is idempotent, dry-run is read-only, and existing commands ar
 
 test('inspect never includes configuration contents or unrelated secret environment values', async t => {
   const f = await fixture(t);
-  await file(join(f.project, '.config/git/config'), '[example]\ntoken = private-test-token\n');
+  await file(join(f.project, '.armor/home/.gitconfig'), '[example]\ntoken = private-test-token\n');
   const plan = await planInvocation('git', ['status'], { cwd: f.child, env: { ...f.env, SECRET: 'hidden-env' }, program: git });
   const diagnostic = JSON.stringify(publicPlan(plan));
   assert.equal(diagnostic.includes('private-test-token'), false);
   assert.equal(diagnostic.includes('hidden-env'), false);
   assert.equal(publicPlan(plan).source, 'directory');
+});
+
+
+test('installed Git uses project .armor/home without changing HOME', async t => {
+  const f = await fixture(t);
+  const config = await file(join(f.project, '.armor/home/.gitconfig'), '[user]\nname = Ada\n');
+  const program = await stubProgram(join(f.root, 'native git'));
+  const binDirectory = join(f.root, 'bin');
+  await install({ tools: ['git'], programs: { git: program }, binDirectory, stateDirectory: join(f.root, 'state'), env: f.env });
+  const result = await execute(join(binDirectory, 'git'), ['status'], { cwd: f.child, env: f.env });
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.global, config);
+  assert.equal(output.home, f.home);
+});
+
+
+test('Git explicitly selects optional project SSH config and preserves HOME', async t => {
+  const f = await fixture(t);
+  await file(join(f.project, '.armor/home/.gitconfig'), '[user]\nname = Ada\n');
+  const sshConfig = await file(join(f.project, '.armor/home/.ssh/config'), 'Host *\n  IdentityAgent none\n');
+  const program = await stubProgram(join(f.root, 'native git'));
+  const plan = await planInvocation('git', ['status'], { cwd: f.child, env: f.env, program });
+  const result = await execute(plan.program, plan.args, { cwd: plan.cwd, env: plan.env });
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ssh, `ssh -F '${sshConfig}'`);
+  assert.equal(output.home, f.home);
+  assert.equal(publicPlan(plan).sshConfig, sshConfig);
+  await assert.rejects(planInvocation('git', ['status'], { cwd: f.child, env: { ...f.env, GIT_SSH_COMMAND: 'ssh -oBatchMode=yes' }, program }), /SSH configuration conflict/);
+});
+
+test('inspect rejects an incomplete or invalid nearest project home without falling back', async t => {
+  const f = await fixture(t);
+  await file(join(f.project, '.armor/home/.gitconfig'), '[user]\nname = Parent\n');
+  await file(join(f.child, '.armor/home/.config/tea/config.yml'), 'logins: []\n');
+  await assert.rejects(execute(process.execPath, [cli, 'inspect', 'git', 'status'], { cwd: f.child, env: f.env }), error => {
+    assert.match(error.stderr, /Missing git configuration/);
+    return true;
+  });
+  await rm(join(f.child, '.armor/home'), { recursive: true });
+  await file(join(f.child, '.armor/home'), 'not a directory');
+  await assert.rejects(execute(process.execPath, [cli, 'inspect', 'tea', 'issues'], { cwd: f.child, env: f.env }), error => {
+    assert.match(error.stderr, /must be a directory/);
+    return true;
+  });
+});
+
+test('project SSH command handles quoted paths and inherited child invocations', async t => {
+  const f = await fixture(t);
+  const project = join(f.project, "space ' $(literal) `literal`");
+  await file(join(project, '.armor/home/.gitconfig'), '[user]\nname = Ada\n');
+  const sshConfig = await file(join(project, '.armor/home/.ssh/config'), 'Host *\n  HostName fixture.invalid\n  IdentityAgent none\n');
+  const plan = await planInvocation('git', ['status'], { cwd: project, env: f.env, program: git });
+  const result = await execute('/bin/sh', ['-c', `${plan.env.GIT_SSH_COMMAND} -G fixture.invalid`], { cwd: project, env: plan.env });
+  assert.match(result.stdout, /^hostname fixture.invalid$/m);
+  const nested = await planInvocation('git', ['status'], { cwd: project, env: plan.env, program: git });
+  assert.equal(nested.env.GIT_SSH_COMMAND, plan.env.GIT_SSH_COMMAND);
+  assert.equal(publicPlan(nested).sshConfig, sshConfig);
+  await assert.rejects(planInvocation('git', ['status'], { cwd: project, env: { ...f.env, GIT_SSH: '/custom/ssh' }, program: git }), /SSH configuration conflict/);
 });
